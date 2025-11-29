@@ -1,11 +1,11 @@
 {
-  "name": "combined-minecraft-bot",
-  "version": "2.0.0",
-  "description": "Advanced Fighter and Herobrine bot with rotation for Aternos server",
-  "main": "combined_bot.js",
+  "name": "minecraft-bot-rotation",
+  "version": "3.0.0",
+  "description": "Fighter and Herobrine bot with night sleep and automatic rotation",
+  "main": "bot.js",
   "scripts": {
-    "start": "node combined_bot.js",
-    "dev": "node combined_bot.js --debug"
+    "start": "node bot.js",
+    "dev": "node bot.js --debug"
   },
   "dependencies": {
     "mineflayer": "^4.15.1",
@@ -15,7 +15,6 @@
     "mineflayer-auto-eat": "^2.4.2",
     "mineflayer-armor-manager": "^1.6.3",
     "mineflayer-tool": "^1.5.0",
-    "mineflayer-web-inventory": "^1.4.1",
     "vec3": "^0.1.8"
   },
   "keywords": [
@@ -24,7 +23,8 @@
     "mineflayer",
     "aternos",
     "fighter",
-    "herobrine"
+    "herobrine",
+    "rotation"
   ],
   "author": "Albin",
   "license": "MIT"
