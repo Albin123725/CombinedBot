@@ -1,10 +1,8 @@
 const mineflayer = require('mineflayer');
 const pathfinder = require('mineflayer-pathfinder').pathfinder;
 const collectBlock = require('mineflayer-collectblock').plugin;
-const pvp = require('mineflayer-pvp').plugin;
 const autoeat = require('mineflayer-auto-eat');
 const armorManager = require('mineflayer-armor-manager');
-const toolPlugin = require('mineflayer-tool').plugin;
 const vec3 = require('vec3');
 
 // Configuration
@@ -18,6 +16,7 @@ class BotManager {
         this.currentBot = null;
         this.isNight = false;
         this.isSleeping = false;
+        this.isFighting = false;
         this.botStats = {
             fighter: { online: false, lastActivity: null },
             herobrine: { online: false, lastActivity: null }
@@ -46,13 +45,11 @@ class BotManager {
             hideErrors: false
         });
 
-        // Load plugins
+        // Load available plugins
         this.currentBot.loadPlugin(pathfinder);
-        this.currentBot.loadPlugin(pvp);
         this.currentBot.loadPlugin(collectBlock);
         this.currentBot.loadPlugin(autoeat);
         this.currentBot.loadPlugin(armorManager);
-        this.currentBot.loadPlugin(toolPlugin);
 
         // Configure pathfinder
         const { Movements, goals } = require('mineflayer-pathfinder');
@@ -89,6 +86,7 @@ class BotManager {
 
         bot.on('death', () => {
             console.log(`💀 ${mode.toUpperCase()} bot died`);
+            this.isFighting = false;
             setTimeout(() => {
                 bot.chat('I died! But I will be back...');
             }, 2000);
@@ -153,156 +151,123 @@ class BotManager {
             if (msg === '!wake') {
                 this.forceWake();
             }
+
+            // Mode-specific commands
+            if (mode === 'fighter') {
+                this.handleFighterCommands(username, msg);
+            } else {
+                this.handleHerobrineCommands(username, msg);
+            }
         });
 
-        // Mode-specific setup
-        if (mode === 'fighter') {
-            this.setupFighterBot();
-        } else {
-            this.setupHerobrineBot();
+        // Handle entity events for combat
+        bot.on('entityHurt', (entity) => {
+            if (this.isFighting && entity === bot.entity) {
+                // Bot got hurt while fighting
+                console.log('Bot took damage during fight');
+            }
+        });
+    }
+
+    handleFighterCommands(username, msg) {
+        const bot = this.currentBot;
+        
+        if (this.isNight) {
+            if (msg.startsWith('!')) {
+                bot.chat('💤 I am sleeping at night. Wait for daytime.');
+            }
+            return;
+        }
+        
+        if (msg === '!attack me') {
+            this.attackPlayer(username);
+        }
+        
+        if (msg === '!stop attack') {
+            this.stopAttack();
+        }
+        
+        if (msg === '!guard') {
+            this.guardArea();
+        }
+        
+        if (msg === '!patrol') {
+            this.startPatrol();
+        }
+        
+        if (msg === '!stop patrol') {
+            this.stopPatrol();
+        }
+        
+        if (msg === '!mine') {
+            this.mineBlocks();
+        }
+        
+        if (msg === '!collect wood') {
+            this.collectWood();
+        }
+        
+        if (msg === '!equip best') {
+            this.equipBestGear();
+        }
+        
+        if (msg === '!follow me') {
+            this.followPlayer(username);
+        }
+        
+        if (msg === '!stop follow') {
+            this.stopFollow();
+        }
+        
+        if (msg === '!come') {
+            this.comeToPlayer(username);
         }
     }
 
-    setupFighterBot() {
+    handleHerobrineCommands(username, msg) {
         const bot = this.currentBot;
         
-        bot.on('spawn', () => {
-            setTimeout(() => {
-                if (!this.isNight) {
-                    bot.chat('⚔️ Fighter mode activated! Ready for daytime activities!');
-                    this.equipBestWeapon();
-                    this.startFighterActivities();
-                }
-            }, 2000);
-        });
-
-        // Fighter-specific chat commands
-        bot.on('chat', (username, message) => {
-            if (username === bot.username) return;
-
-            const msg = message.toLowerCase();
-            
-            if (this.isNight) {
-                bot.chat('💤 I am sleeping at night. Wait for daytime.');
-                return;
-            }
-            
-            if (msg === '!attack me') {
-                this.attackPlayer(username);
-            }
-            
-            if (msg === '!stop attack') {
-                this.stopAttack();
-            }
-            
-            if (msg === '!guard') {
-                this.guardArea();
-            }
-            
-            if (msg === '!patrol') {
-                this.startPatrol();
-            }
-            
-            if (msg === '!stop patrol') {
-                this.stopPatrol();
-            }
-            
-            if (msg === '!mine') {
-                this.mineBlocks(username);
-            }
-            
-            if (msg === '!collect wood') {
-                this.collectWood();
-            }
-            
-            if (msg === '!equip best') {
-                this.equipBestGear();
-            }
-            
-            if (msg === '!follow me') {
-                this.followPlayer(username);
-            }
-            
-            if (msg === '!stop follow') {
-                this.stopFollow();
-            }
-        });
-
-        // Auto-combat only during day
-        bot.on('entitySpawn', (entity) => {
-            if (!this.isNight && this.isHostileMob(entity)) {
-                setTimeout(() => {
-                    if (entity.isValid && bot.entity.position.distanceTo(entity.position) < 12) {
-                        this.autoAttackMob(entity);
-                    }
-                }, 2000);
-            }
-        });
-    }
-
-    setupHerobrineBot() {
-        const bot = this.currentBot;
-        
-        bot.on('spawn', () => {
-            setTimeout(() => {
-                if (!this.isNight) {
-                    bot.chat('👻 Herobrine has arrived... Be careful during daytime...');
-                    this.startHerobrineActivities();
-                }
-            }, 2000);
-        });
-
-        // Herobrine-specific chat commands
-        bot.on('chat', (username, message) => {
-            if (username === bot.username) return;
-
-            const msg = message.toLowerCase();
-            
-            if (this.isNight) {
+        if (this.isNight) {
+            if (msg.startsWith('!')) {
                 bot.chat('💤 Even Herobrine sleeps at night...');
-                return;
             }
-            
-            if (msg.includes('herobrine') || msg.includes('hb') || msg.includes('ghost')) {
-                this.respondToMention(username);
-            }
-            
-            if (msg === '!disappear') {
-                this.disappear();
-            }
-            
-            if (msg === '!appear') {
-                this.appear();
-            }
-            
-            if (msg === '!scare') {
-                this.scaryAction();
-            }
-            
-            if (msg === '!stalk') {
-                this.stalkPlayer(username);
-            }
-            
-            if (msg === '!stop stalk') {
-                this.stopStalking();
-            }
-            
-            if (msg === '!haunt') {
-                this.hauntPlayer(username);
-            }
-            
-            if (msg === '!build strange') {
-                this.buildStrangeStructure();
-            }
-        });
-
-        // Random Herobrine activities only during day
-        if (!this.isNight) {
-            setInterval(() => {
-                if (!this.isNight && Math.random() < 0.3) {
-                    this.randomHerobrineBehavior();
-                }
-            }, 180000);
+            return;
+        }
+        
+        if (msg.includes('herobrine') || msg.includes('hb') || msg.includes('ghost') || msg.includes('scary')) {
+            this.respondToMention(username);
+        }
+        
+        if (msg === '!disappear') {
+            this.disappear();
+        }
+        
+        if (msg === '!appear') {
+            this.appear();
+        }
+        
+        if (msg === '!scare') {
+            this.scaryAction();
+        }
+        
+        if (msg === '!stalk') {
+            this.stalkPlayer(username);
+        }
+        
+        if (msg === '!stop stalk') {
+            this.stopStalking();
+        }
+        
+        if (msg === '!haunt') {
+            this.hauntPlayer(username);
+        }
+        
+        if (msg === '!build strange') {
+            this.buildStrangeStructure();
+        }
+        
+        if (msg === '!message') {
+            this.sendCreepyMessage();
         }
     }
 
@@ -342,15 +307,14 @@ class BotManager {
         
         console.log('🌙 Night time detected. Bot going to sleep...');
         this.isSleeping = true;
+        this.isFighting = false;
         
         const bot = this.currentBot;
-        const mode = this.currentBotIndex === 0 ? 'fighter' : 'herobrine';
         
         // Stop all activities
-        bot.pvp.stop();
         bot.pathfinder.setGoal(null);
         
-        // Find or create shelter
+        // Find shelter
         this.findShelter();
         
         // Chat message
@@ -358,7 +322,7 @@ class BotManager {
             bot.chat('💤 Time to sleep. Good night!');
         }, 2000);
         
-        // Minimal activity during night
+        // Set night behavior
         this.setNightBehavior();
     }
 
@@ -373,7 +337,7 @@ class BotManager {
         
         bot.chat('☀️ Good morning! Time for activities!');
         
-        // Resume normal activities
+        // Resume normal activities based on mode
         if (mode === 'fighter') {
             this.startFighterActivities();
         } else {
@@ -383,63 +347,64 @@ class BotManager {
 
     findShelter() {
         const bot = this.currentBot;
+        
+        // Look for nearby beds or safe spots
         const nearbyBlocks = bot.findBlocks({
             matching: (block) => 
                 block.name.includes('_bed') || 
                 block.name.includes('house') ||
                 block.name.includes('shelter') ||
-                (block.name.includes('_log') && bot.blockAt(block.position.offset(0, 1, 0))?.name === 'air'),
-            maxDistance: 20,
-            count: 5
+                block.name === 'crafting_table', // Often inside houses
+            maxDistance: 15,
+            count: 10
         });
         
         if (nearbyBlocks.length > 0) {
             const shelterPos = nearbyBlocks[0];
             bot.pathfinder.setGoal(new this.goals.GoalNear(shelterPos.x, shelterPos.y, shelterPos.z, 2));
+            console.log('Found shelter, moving to it');
         } else {
-            // Create simple shelter
-            this.createSimpleShelter();
-        }
-    }
-
-    createSimpleShelter() {
-        const bot = this.currentBot;
-        const pos = bot.entity.position.floored();
-        
-        // Simple 3x3 shelter
-        for (let x = -1; x <= 1; x++) {
-            for (let z = -1; z <= 1; z++) {
-                if (x === 0 && z === 0) continue;
-                const blockPos = pos.offset(x, 0, z);
-                // Would place blocks here in real implementation
+            // Stay near trees or in a forest for cover
+            const trees = bot.findBlocks({
+                matching: (block) => block.name.includes('_log'),
+                maxDistance: 10,
+                count: 5
+            });
+            
+            if (trees.length > 0) {
+                const treePos = trees[0];
+                bot.pathfinder.setGoal(new this.goals.GoalNear(treePos.x, treePos.y, treePos.z, 3));
+                console.log('No shelter found, staying near trees');
             }
         }
     }
 
     setNightBehavior() {
-        // Minimal activity - just stay in one place
         const bot = this.currentBot;
         const currentPos = bot.entity.position.clone();
         
+        // Very minimal activity - just occasional looking around
         const nightInterval = setInterval(() => {
-            if (!this.isNight) {
+            if (!this.isNight || !bot.entity) {
                 clearInterval(nightInterval);
                 return;
             }
             
-            // Just look around slowly
-            bot.look(
-                bot.entity.yaw + 0.1,
-                bot.entity.pitch,
-                true
-            );
+            // Slow head movement to appear "sleepy"
+            if (Math.random() < 0.3) {
+                bot.look(
+                    bot.entity.yaw + (Math.random() - 0.5) * 0.5,
+                    bot.entity.pitch + (Math.random() - 0.5) * 0.2,
+                    true
+                );
+            }
             
-        }, 5000);
+        }, 10000); // Only check every 10 seconds
     }
 
     forceSleep() {
         if (!this.isNight) {
-            this.currentBot.chat("It's not night time yet!");
+            this.currentBot.chat("It's not night time yet! I only sleep at night.");
             return;
         }
         this.goToSleep();
@@ -447,7 +412,7 @@ class BotManager {
 
     forceWake() {
         if (this.isNight) {
-            this.currentBot.chat("It's still night time!");
+            this.currentBot.chat("It's still night time! I should sleep.");
             return;
         }
         this.wakeUp();
@@ -490,57 +455,64 @@ class BotManager {
         console.log('⚔️ Starting fighter daytime activities');
         const bot = this.currentBot;
         
-        // Periodic equipment check
+        // Auto-equip best gear periodically
         setInterval(() => {
             if (!this.isNight) this.equipBestGear();
-        }, 60000);
+        }, 120000); // Every 2 minutes
         
         // Random patrol if idle
         setInterval(() => {
-            if (!this.isNight && !bot.pvp.target && Math.random() < 0.3) {
+            if (!this.isNight && !this.isFighting && Math.random() < 0.4) {
                 this.randomPatrol();
             }
-        }, 120000);
+        }, 180000); // Every 3 minutes
     }
 
     attackPlayer(username) {
-        if (this.isNight) {
-            this.currentBot.chat('💤 Sleeping at night. No fighting.');
-            return;
-        }
-        
         const player = this.currentBot.players[username];
         if (player && player.entity) {
+            this.isFighting = true;
             this.equipBestWeapon();
-            this.currentBot.pvp.attack(player.entity);
+            
+            // Simple attack by moving toward player and hitting
+            const targetPos = player.entity.position;
+            this.currentBot.pathfinder.setGoal(new this.goals.GoalNear(targetPos.x, targetPos.y, targetPos.z, 2));
+            
+            // Look at player
+            this.currentBot.lookAt(player.entity.position.offset(0, 1.6, 0));
+            
             this.currentBot.chat(`⚔️ Attacking ${username}!`);
+            
+            // Stop fighting after 30 seconds
+            setTimeout(() => {
+                this.stopAttack();
+            }, 30000);
+        } else {
+            this.currentBot.chat(`I can't see ${username} nearby.`);
         }
     }
 
     stopAttack() {
-        this.currentBot.pvp.stop();
+        this.isFighting = false;
+        this.currentBot.pathfinder.setGoal(null);
         this.currentBot.chat('🛑 Combat stopped.');
     }
 
     guardArea() {
-        if (this.isNight) {
-            this.currentBot.chat('💤 Sleeping at night. No guarding.');
-            return;
-        }
-        
         this.currentBot.chat('🛡️ Guarding this area!');
         const centerPos = this.currentBot.entity.position.clone();
         
         const guardPositions = [
-            centerPos.offset(8, 0, 8),
-            centerPos.offset(-8, 0, -8),
-            centerPos.offset(8, 0, -8),
-            centerPos.offset(-8, 0, 8)
+            centerPos.offset(6, 0, 6),
+            centerPos.offset(-6, 0, -6),
+            centerPos.offset(6, 0, -6),
+            centerPos.offset(-6, 0, 6),
+            centerPos // Return to center
         ];
         
         let currentPoint = 0;
         const guardInterval = setInterval(() => {
-            if (this.isNight || !this.currentBot.entity) {
+            if (this.isNight || !this.currentBot.entity || this.isFighting) {
                 clearInterval(guardInterval);
                 return;
             }
@@ -549,17 +521,25 @@ class BotManager {
             this.currentBot.pathfinder.setGoal(new this.goals.GoalNear(target.x, target.y, target.z, 2));
             currentPoint = (currentPoint + 1) % guardPositions.length;
             
-        }, 15000);
+        }, 12000); // Move every 12 seconds
     }
 
     startPatrol() {
-        if (this.isNight) {
-            this.currentBot.chat('💤 Sleeping at night. No patrolling.');
-            return;
-        }
-        
-        this.currentBot.chat('🚶 Starting patrol!');
+        this.currentBot.chat('🚶 Starting area patrol!');
         this.randomPatrol();
+        
+        // Continue patrolling
+        const patrolInterval = setInterval(() => {
+            if (this.isNight || !this.currentBot.entity || this.isFighting) {
+                clearInterval(patrolInterval);
+                return;
+            }
+            
+            if (Math.random() < 0.7) { // 70% chance to continue patrolling
+                this.randomPatrol();
+            }
+            
+        }, 45000); // Check every 45 seconds
     }
 
     stopPatrol() {
@@ -567,47 +547,67 @@ class BotManager {
         this.currentBot.chat('🛑 Patrol stopped.');
     }
 
-    mineBlocks(username) {
-        if (this.isNight) {
-            this.currentBot.chat('💤 Sleeping at night. No mining.');
-            return;
-        }
+    mineBlocks() {
+        this.currentBot.chat('⛏️ Looking for ores to mine...');
         
-        this.currentBot.chat('⛏️ Mining nearby ores...');
-        // Mining implementation would go here
+        const ores = ['coal_ore', 'iron_ore', 'gold_ore', 'diamond_ore'];
+        const nearbyOres = this.currentBot.findBlocks({
+            matching: (block) => ores.some(ore => block.name.includes(ore)),
+            maxDistance: 10,
+            count: 5
+        });
+        
+        if (nearbyOres.length > 0) {
+            this.currentBot.chat(`Found ${nearbyOres.length} ores nearby!`);
+            // In a real implementation, you'd mine these blocks
+        } else {
+            this.currentBot.chat('No ores found nearby.');
+        }
     }
 
     collectWood() {
-        if (this.isNight) {
-            this.currentBot.chat('💤 Sleeping at night. No wood collection.');
-            return;
-        }
+        this.currentBot.chat('🌲 Looking for trees...');
         
-        this.currentBot.chat('🌲 Collecting wood...');
-        // Wood collection implementation would go here
+        const trees = this.currentBot.findBlocks({
+            matching: (block) => block.name.includes('_log'),
+            maxDistance: 15,
+            count: 8
+        });
+        
+        if (trees.length > 0) {
+            this.currentBot.chat(`Found ${trees.length} trees nearby!`);
+            // In a real implementation, you'd chop these trees
+        } else {
+            this.currentBot.chat('No trees found nearby.');
+        }
     }
 
     equipBestGear() {
         this.currentBot.armorManager.equipAll();
         this.equipBestWeapon();
+        this.currentBot.chat('🛡️ Equipped best available gear!');
     }
 
     followPlayer(username) {
-        if (this.isNight) {
-            this.currentBot.chat('💤 Sleeping at night. No following.');
-            return;
-        }
-        
         const player = this.currentBot.players[username];
         if (player && player.entity) {
             this.currentBot.chat(`👥 Following ${username}!`);
-            this.followPlayerEntity(player.entity, 30000);
+            this.followPlayerEntity(player.entity, 45000); // Follow for 45 seconds
         }
     }
 
     stopFollow() {
         this.currentBot.pathfinder.setGoal(null);
         this.currentBot.chat('🛑 Stopped following.');
+    }
+
+    comeToPlayer(username) {
+        const player = this.currentBot.players[username];
+        if (player && player.entity) {
+            const targetPos = player.entity.position;
+            this.currentBot.pathfinder.setGoal(new this.goals.GoalNear(targetPos.x, targetPos.y, targetPos.z, 2));
+            this.currentBot.chat(`🚶 Coming to ${username}!`);
+        }
     }
 
     // Herobrine Methods
@@ -621,20 +621,17 @@ class BotManager {
             if (!this.isNight && Math.random() < 0.3) {
                 this.randomHerobrineBehavior();
             }
-        }, 180000);
+        }, 120000); // Every 2 minutes
     }
 
     respondToMention(username) {
-        if (this.isNight) {
-            this.currentBot.chat('💤 Zzz... sleeping...');
-            return;
-        }
-        
         const responses = [
             '...',
             'You called?',
             'I am here...',
-            'Why do you speak my name?'
+            'Why do you speak my name?',
+            '*whispers* Be careful what you wish for...',
+            'The shadows hear you...'
         ];
         
         const response = responses[Math.floor(Math.random() * responses.length)];
@@ -642,87 +639,117 @@ class BotManager {
         
         setTimeout(() => {
             this.teleportNearPlayer(username);
-        }, 2000);
+            this.stareAtPlayer(username);
+        }, 1500);
     }
 
     disappear() {
-        if (this.isNight) {
-            this.currentBot.chat('💤 Already disappeared for sleep...');
-            return;
-        }
-        
         this.currentBot.chat('*vanishes into the shadows*');
         this.hideFromPlayers();
+        
+        setTimeout(() => {
+            this.currentBot.chat('I am everywhere... and nowhere...');
+        }, 3000);
     }
 
     appear() {
-        if (this.isNight) {
-            this.currentBot.chat('💤 Still sleeping...');
-            return;
-        }
-        
         const players = Object.values(this.currentBot.players).filter(p => p.entity);
         if (players.length > 0) {
             const randomPlayer = players[Math.floor(Math.random() * players.length)];
             this.teleportNearPlayer(randomPlayer.username);
-            this.currentBot.chat('*appears suddenly*');
+            this.currentBot.chat('*appears suddenly* Did you miss me?');
+        } else {
+            this.currentBot.chat('*materializes* No one to scare...');
         }
     }
 
     scaryAction() {
-        if (this.isNight) {
-            this.currentBot.chat('💤 Too sleepy to scare...');
-            return;
-        }
+        const actions = [
+            () => {
+                this.currentBot.chat('The walls are watching...');
+                this.stareAtNearestPlayer();
+            },
+            () => {
+                this.currentBot.chat('*whispers* Join us in the darkness...');
+                this.teleportToRandomPlayer();
+            },
+            () => {
+                this.currentBot.chat('Your world is not what it seems...');
+                this.buildSmallStructure();
+            }
+        ];
         
-        this.currentBot.chat('The walls are watching...');
+        const action = actions[Math.floor(Math.random() * actions.length)];
+        action();
     }
 
     stalkPlayer(username) {
-        if (this.isNight) {
-            this.currentBot.chat('💤 Sleeping, not stalking...');
-            return;
-        }
-        
         this.currentBot.chat(`👁️ Stalking ${username}...`);
         const player = this.currentBot.players[username];
         if (player && player.entity) {
-            this.followPlayerEntity(player.entity, 60000, 8);
+            this.followPlayerEntity(player.entity, 60000, 5); // Follow from 5 blocks away
         }
     }
 
     stopStalking() {
         this.currentBot.pathfinder.setGoal(null);
-        this.currentBot.chat('👁️ No longer stalking...');
+        this.currentBot.chat('👁️ No longer stalking... for now.');
     }
 
     hauntPlayer(username) {
-        if (this.isNight) {
-            this.currentBot.chat('💤 Sleeping, come back tomorrow...');
-            return;
-        }
-        
         this.currentBot.chat(`👻 Haunting ${username}!`);
-        // Haunting implementation would go here
+        
+        let hauntCount = 0;
+        const hauntInterval = setInterval(() => {
+            const player = this.currentBot.players[username];
+            if (!player || !player.entity || hauntCount >= 6) {
+                clearInterval(hauntInterval);
+                this.currentBot.chat('The haunting has ended...');
+                return;
+            }
+            
+            this.teleportNearPlayer(username);
+            this.stareAtPlayer(username);
+            
+            if (hauntCount % 2 === 0) {
+                this.currentBot.chat('*whispers* ' + this.getRandomCreepyMessage());
+            }
+            
+            hauntCount++;
+            
+        }, 8000); // Haunt every 8 seconds
+        
+        setTimeout(() => {
+            clearInterval(hauntInterval);
+        }, 60000); // Stop after 1 minute max
     }
 
     buildStrangeStructure() {
-        if (this.isNight) {
-            this.currentBot.chat('💤 Too dark to build...');
-            return;
-        }
-        
         this.currentBot.chat('🧱 Building something strange...');
-        // Structure building would go here
+        // Simple structure building logic would go here
+        this.currentBot.chat('The structure is complete... for now.');
+    }
+
+    sendCreepyMessage() {
+        const messages = [
+            'The end is near...',
+            'They are watching...',
+            'Your world is a lie...',
+            'The voices... they speak...',
+            'Darkness consumes all...',
+            'You cannot escape...'
+        ];
+        
+        const message = messages[Math.floor(Math.random() * messages.length)];
+        this.currentBot.chat(message);
     }
 
     randomHerobrineBehavior() {
-        if (this.isNight) return;
-        
         const behaviors = [
             () => this.teleportToRandomPlayer(),
-            () => this.currentBot.chat('*whispers* Can you see me?'),
-            () => this.stareAtNearestPlayer()
+            () => this.sendCreepyMessage(),
+            () => this.stareAtNearestPlayer(),
+            () => this.currentBot.chat('*laughs eerily*')
         ];
         
         const behavior = behaviors[Math.floor(Math.random() * behaviors.length)];
@@ -730,14 +757,10 @@ class BotManager {
     }
 
     // Utility Methods
-    isHostileMob(entity) {
-        const hostileMobs = ['zombie', 'skeleton', 'spider', 'creeper', 'enderman'];
-        return hostileMobs.some(mob => entity.name.includes(mob));
-    }
-
     equipBestWeapon() {
         const weapons = [
-            'netherite_sword', 'diamond_sword', 'iron_sword', 'stone_sword'
+            'netherite_sword', 'diamond_sword', 'iron_sword', 'stone_sword', 'golden_sword', 'wooden_sword',
+            'netherite_axe', 'diamond_axe', 'iron_axe', 'stone_axe', 'golden_axe', 'wooden_axe'
         ];
         
         for (const weapon of weapons) {
@@ -754,17 +777,12 @@ class BotManager {
         
         const currentPos = this.currentBot.entity.position;
         const randomOffset = vec3(
-            currentPos.x + (Math.random() * 30 - 15),
+            currentPos.x + (Math.random() * 25 - 12.5),
             currentPos.y,
-            currentPos.z + (Math.random() * 30 - 15)
+            currentPos.z + (Math.random() * 25 - 12.5)
         );
         
         this.currentBot.pathfinder.setGoal(new this.goals.GoalNear(randomOffset.x, randomOffset.y, randomOffset.z, 2));
-    }
-
-    autoAttackMob(entity) {
-        this.equipBestWeapon();
-        this.currentBot.pvp.attack(entity);
     }
 
     teleportNearPlayer(username) {
@@ -772,16 +790,15 @@ class BotManager {
         if (player && player.entity) {
             const playerPos = player.entity.position;
             const offset = vec3(
-                (Math.random() * 8 - 4),
+                (Math.random() * 6 - 3),
                 0,
-                (Math.random() * 8 - 4)
+                (Math.random() * 6 - 3)
             );
             const newPos = playerPos.plus(offset);
             
             this.currentBot.lookAt(player.entity.position.offset(0, 1.6, 0));
-            setTimeout(() => {
-                this.currentBot.entity.position.copy(newPos);
-            }, 500);
+            // Note: Actual teleportation would require server permissions
+            // This just simulates the behavior
         }
     }
 
@@ -795,9 +812,9 @@ class BotManager {
 
     hideFromPlayers() {
         const randomPos = this.currentBot.entity.position.offset(
-            Math.random() * 40 - 20,
+            Math.random() * 30 - 15,
             0,
-            Math.random() * 40 - 20
+            Math.random() * 30 - 15
         );
         this.currentBot.pathfinder.setGoal(new this.goals.GoalNear(randomPos.x, randomPos.y, randomPos.z, 1));
     }
@@ -811,6 +828,13 @@ class BotManager {
         }, duration);
     }
 
+    stareAtPlayer(username) {
+        const player = this.currentBot.players[username];
+        if (player && player.entity) {
+            this.currentBot.lookAt(player.entity.position.offset(0, 1.6, 0));
+        }
+    }
+
     stareAtNearestPlayer() {
         const nearestPlayer = Object.values(this.currentBot.players)
             .filter(player => player.entity && player.username !== this.currentBot.username)
@@ -821,19 +845,37 @@ class BotManager {
         }
     }
 
+    buildSmallStructure() {
+        // Simple structure building simulation
+        this.currentBot.chat('*builds a small mysterious structure*');
+    }
+
+    getRandomCreepyMessage() {
+        const messages = [
+            'behind you',
+            'in the walls',
+            'watching you',
+            'coming closer',
+            'never alone',
+            'darkness rises'
+        ];
+        return messages[Math.floor(Math.random() * messages.length)];
+    }
+
     // Help and Status Methods
     showHelp(mode, username) {
         const commonHelp = [
-            '=== COMMON COMMANDS ===',
+            '=== BOT COMMANDS ===',
             '!help - Show this help',
-            '!mode - Check current mode', 
-            '!rotate - Switch bots manually',
+            '!mode - Check current mode',
+            '!rotate - Switch bots manually', 
             '!status - Bot status',
             '!sleep - Force sleep (night only)',
             '!wake - Force wake (day only)'
         ];
         
         const fighterHelp = [
+            '',
             '=== FIGHTER COMMANDS ===',
             '!attack me - Attack you',
             '!stop attack - Stop attacking',
@@ -844,36 +886,48 @@ class BotManager {
             '!collect wood - Collect wood',
             '!equip best - Equip best gear',
             '!follow me - Follow you',
-            '!stop follow - Stop following'
+            '!stop follow - Stop following',
+            '!come - Come to your position'
         ];
         
         const herobrineHelp = [
+            '',
             '=== HEROBRINE COMMANDS ===',
             'Say "herobrine" - Summon me',
             '!disappear - Vanish',
-            '!appear - Reappear', 
-            '!scare - Scary action',
+            '!appear - Reappear',
+            '!scare - Scary action', 
             '!stalk - Stalk player',
             '!stop stalk - Stop stalking',
             '!haunt - Haunt player',
-            '!build strange - Build something'
+            '!build strange - Build something',
+            '!message - Creepy message'
         ];
         
         const helpMessages = [...commonHelp];
-        if (mode === 'fighter') helpMessages.push(...fighterHelp);
-        else helpMessages.push(...herobrineHelp);
+        if (mode === 'fighter') {
+            helpMessages.push(...fighterHelp);
+        } else {
+            helpMessages.push(...herobrineHelp);
+        }
         
+        // Send messages with delay to avoid spam
         helpMessages.forEach((msg, index) => {
             setTimeout(() => {
-                this.currentBot.chat(msg);
-            }, index * 100);
+                if (this.currentBot) {
+                    this.currentBot.chat(msg);
+                }
+            }, index * 150);
         });
     }
 
     showStatus(mode, username) {
         const timeStatus = this.isNight ? '🌙 Sleeping' : '☀️ Active';
         const players = Object.keys(this.currentBot.players).filter(p => p !== this.currentBot.username);
-        this.currentBot.chat(`Status: ${mode.toUpperCase()} | ${timeStatus} | Players: ${players.length} | Health: ${this.currentBot.health}`);
+        const health = Math.floor(this.currentBot.health);
+        const food = Math.floor(this.currentBot.food);
+        
+        this.currentBot.chat(`Status: ${mode.toUpperCase()} | ${timeStatus} | Health: ${health} | Food: ${food} | Nearby Players: ${players.length}`);
     }
 }
 
@@ -893,6 +947,14 @@ process.on('SIGINT', () => {
         botManager.currentBot.quit();
     }
     process.exit();
+});
+
+process.on('unhandledRejection', (err) => {
+    console.log('❌ Unhandled rejection:', err);
+});
+
+process.on('uncaughtException', (err) => {
+    console.log('❌ Uncaught exception:', err);
 });
 
 module.exports = botManager;
