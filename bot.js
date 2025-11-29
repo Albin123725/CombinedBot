@@ -40,11 +40,15 @@ class BotManager {
         this.currentTask = null;
         this.activityInterval = null;
         this.botStatus = 'starting';
+        this.reconnectAttempts = 0;
+        this.maxReconnectAttempts = 5; // Reduced from 10
+        this.lastConnectionAttempt = 0;
+        this.connectionCooldown = 30000; // 30 seconds cooldown between connections
         
         // Start bot after a short delay to let health server start
         setTimeout(() => {
             this.startBotRotation();
-        }, 2000);
+        }, 5000); // Increased initial delay
     }
 
     startBotRotation() {
@@ -53,11 +57,44 @@ class BotManager {
         this.connectBot();
     }
 
+    canConnect() {
+        const now = Date.now();
+        const timeSinceLastAttempt = now - this.lastConnectionAttempt;
+        
+        if (timeSinceLastAttempt < this.connectionCooldown) {
+            const remaining = Math.ceil((this.connectionCooldown - timeSinceLastAttempt) / 1000);
+            console.log(`⏳ Connection cooldown: ${remaining}s remaining`);
+            return false;
+        }
+        
+        if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+            console.log(`❌ Max reconnection attempts (${this.maxReconnectAttempts}) reached. Waiting before retrying...`);
+            // Reset attempts after a longer wait
+            setTimeout(() => {
+                this.reconnectAttempts = 0;
+                console.log('🔄 Resetting connection attempts counter');
+            }, 60000); // 1 minute
+            return false;
+        }
+        
+        return true;
+    }
+
     connectBot() {
+        if (!this.canConnect()) {
+            const retryTime = this.connectionCooldown;
+            console.log(`⏰ Will retry connection in ${retryTime/1000} seconds...`);
+            setTimeout(() => this.connectBot(), retryTime);
+            return;
+        }
+
+        this.lastConnectionAttempt = Date.now();
+        this.reconnectAttempts++;
+
         const username = BOT_USERNAMES[this.currentBotIndex];
         const mode = this.currentBotIndex === 0 ? 'keeper' : 'herobrine';
         
-        console.log(`🎮 Connecting ${mode.toUpperCase()} bot: ${username}`);
+        console.log(`🎮 Connecting ${mode.toUpperCase()} bot: ${username} (Attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
         this.botStatus = `connecting_${mode}`;
         
         try {
@@ -68,13 +105,14 @@ class BotManager {
                 version: '1.21.10',
                 auth: 'offline',
                 checkTimeoutInterval: 30000,
-                logErrors: true
+                logErrors: true,
+                connectTimeout: 30000, // 30 second connection timeout
             });
 
             this.setupEventHandlers(mode);
         } catch (error) {
             console.log('❌ Error creating bot:', error);
-            this.rotateToNextBot();
+            this.scheduleNextRotation();
         }
     }
 
@@ -84,6 +122,7 @@ class BotManager {
         bot.on('login', () => {
             console.log(`✅ ${mode.toUpperCase()} bot logged in successfully`);
             this.botStatus = `connected_${mode}`;
+            this.reconnectAttempts = 0; // Reset on successful login
         });
 
         bot.on('spawn', () => {
@@ -130,19 +169,31 @@ class BotManager {
         bot.on('kicked', (reason) => {
             console.log(`🚫 ${mode.toUpperCase()} bot kicked:`, reason);
             this.botStatus = 'kicked';
-            setTimeout(() => this.rotateToNextBot(), 5000);
+            
+            if (reason.includes('throttled') || reason.includes('wait')) {
+                console.log('⚠️ Connection throttled detected - increasing cooldown');
+                this.connectionCooldown = 60000; // Increase to 1 minute for throttled connections
+            }
+            
+            this.scheduleNextRotation();
         });
 
         bot.on('error', (err) => {
             console.log(`❌ ${mode.toUpperCase()} bot error:`, err.message);
             this.botStatus = 'error';
-            setTimeout(() => this.rotateToNextBot(), 5000);
+            
+            if (err.code === 'ECONNRESET' || err.message.includes('timeout')) {
+                console.log('⚠️ Connection error detected - increasing cooldown');
+                this.connectionCooldown = 45000; // 45 seconds for connection errors
+            }
+            
+            this.scheduleNextRotation();
         });
 
         bot.on('end', () => {
             console.log(`🔌 ${mode.toUpperCase()} bot disconnected`);
             this.botStatus = 'disconnected';
-            setTimeout(() => this.rotateToNextBot(), 5000);
+            this.scheduleNextRotation();
         });
 
         // Common chat commands
@@ -164,7 +215,7 @@ class BotManager {
             }
             
             if (msg === '!rotate') {
-                bot.chat('🔄 Rotating to next bot...');
+                bot.chat('🔄 Manually rotating to next bot...');
                 this.manualRotate();
             }
             
@@ -197,79 +248,57 @@ class BotManager {
         });
     }
 
-    handleKeeperCommands(username, msg) {
-        const bot = this.currentBot;
-        
-        if (msg === '!guard') {
-            this.guardArea();
+    scheduleNextRotation() {
+        // Calculate delay based on reconnect attempts
+        let delay;
+        if (this.reconnectAttempts <= 2) {
+            delay = 30000; // 30 seconds for first few attempts
+        } else if (this.reconnectAttempts <= 4) {
+            delay = 60000; // 1 minute for middle attempts
+        } else {
+            delay = 120000; // 2 minutes for final attempts
         }
+
+        console.log(`⏰ Scheduling next rotation in ${delay/1000} seconds...`);
         
-        if (msg === '!patrol') {
-            this.startPatrol();
-        }
-        
-        if (msg === '!stop patrol') {
-            this.stopPatrol();
-        }
-        
-        if (msg === '!follow me') {
-            this.followPlayer(username);
-        }
-        
-        if (msg === '!stop follow') {
-            this.stopFollow();
-        }
-        
-        if (msg === '!come') {
-            this.comeToPlayer(username);
-        }
-        
-        if (msg === '!explore') {
-            this.exploreArea();
-        }
-        
-        if (msg === '!protect') {
-            this.protectPlayer(username);
-        }
+        setTimeout(() => {
+            this.rotateToNextBot();
+        }, delay);
     }
 
-    handleHerobrineCommands(username, msg) {
-        const bot = this.currentBot;
+    rotateToNextBot() {
+        console.log('🔄 Rotating to next bot...');
         
-        if (msg.includes('herobrine') || msg.includes('hb') || msg.includes('ghost') || msg.includes('scary')) {
-            this.respondToMention(username);
+        // Clean up current bot
+        this.stopAllActivities();
+        if (this.currentBot) {
+            try {
+                this.currentBot.quit();
+            } catch (e) {
+                console.log('Error during bot cleanup:', e);
+            }
+            this.currentBot = null;
         }
         
-        if (msg === '!disappear') {
-            this.disappear();
-        }
+        // Reset cooldown to default for new connection attempts
+        this.connectionCooldown = 30000;
         
-        if (msg === '!appear') {
-            this.appear();
-        }
+        // Switch to next bot
+        this.currentBotIndex = (this.currentBotIndex + 1) % BOT_USERNAMES.length;
         
-        if (msg === '!scare') {
-            this.scaryAction();
-        }
+        console.log(`Next bot: ${BOT_USERNAMES[this.currentBotIndex]}`);
         
-        if (msg === '!stalk') {
-            this.stalkPlayer(username);
-        }
-        
-        if (msg === '!stop stalk') {
-            this.stopStalking();
-        }
-        
-        if (msg === '!haunt') {
-            this.hauntPlayer(username);
-        }
-        
-        if (msg === '!message') {
-            this.sendCreepyMessage();
-        }
+        // Connect the next bot
+        this.connectBot();
     }
 
-    // ========== SLEEP SYSTEM (COPIED FROM YOUR BOT) ==========
+    manualRotate() {
+        console.log('Manual rotation triggered');
+        this.reconnectAttempts = 0; // Reset attempts for manual rotation
+        this.rotateToNextBot();
+    }
+
+    // ========== SLEEP SYSTEM ==========
     
     // Time and Sleep Management
     startTimeMonitoring() {
@@ -518,38 +547,6 @@ class BotManager {
             return;
         }
         this.wakeUp();
-    }
-
-    // ========== BOT ROTATION SYSTEM ==========
-    
-    rotateToNextBot() {
-        console.log('🔄 Rotating to next bot...');
-        
-        // Clean up current bot
-        this.stopAllActivities();
-        if (this.currentBot) {
-            try {
-                this.currentBot.quit();
-            } catch (e) {
-                console.log('Error during bot cleanup:', e);
-            }
-            this.currentBot = null;
-        }
-        
-        // Switch to next bot
-        this.currentBotIndex = (this.currentBotIndex + 1) % BOT_USERNAMES.length;
-        
-        console.log(`Next bot: ${BOT_USERNAMES[this.currentBotIndex]}`);
-        
-        // Wait 8 seconds before connecting next bot
-        setTimeout(() => {
-            this.connectBot();
-        }, 8000);
-    }
-
-    manualRotate() {
-        console.log('Manual rotation triggered');
-        this.rotateToNextBot();
     }
 
     // ========== KEEPER METHODS ==========
@@ -933,6 +930,7 @@ console.log('Starting Minecraft Bot Rotation System');
 console.log('Server:', SERVER_IP + ':' + SERVER_PORT);
 console.log('Version: 1.21.10');
 console.log('Bots: Keeper & HeroBrine');
+console.log('Connection Throttling: ENABLED - Will respect Aternos rate limits');
 console.log('Night Sleep: ENABLED - Bot will be completely inactive at night');
 console.log('Auto Rotation: On Disconnect');
 
