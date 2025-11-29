@@ -29,7 +29,7 @@ server.listen(PORT, () => {
 // Configuration
 const SERVER_IP = 'gameplannet.aternos.me';
 const SERVER_PORT = 51270;
-const BOT_USERNAMES = ['FighterBot', 'HerobrineBot'];
+const BOT_USERNAMES = ['Keeper', 'HeroBrine'];
 
 class BotManager {
     constructor() {
@@ -55,7 +55,7 @@ class BotManager {
 
     connectBot() {
         const username = BOT_USERNAMES[this.currentBotIndex];
-        const mode = this.currentBotIndex === 0 ? 'fighter' : 'herobrine';
+        const mode = this.currentBotIndex === 0 ? 'Keeper' : 'HeroBrine';
         
         console.log(`🎮 Connecting ${mode.toUpperCase()} bot: ${username}`);
         this.botStatus = `connecting_${mode}`;
