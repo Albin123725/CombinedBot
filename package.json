@@ -16,5 +16,8 @@
     "aternos"
   ],
   "author": "Albin",
-  "license": "MIT"
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  }
 }
