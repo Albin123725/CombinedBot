@@ -1,4 +1,26 @@
 const mineflayer = require('mineflayer');
+const express = require('express');
+
+// Create a simple web server for Render
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+app.get('/', (req, res) => {
+  res.json({
+    status: 'online',
+    service: 'Minecraft Bot Rotation System',
+    features: ['Fighter Bot', 'Herobrine Bot', 'Night Sleep', 'Auto Rotation']
+  });
+});
+
+app.get('/health', (req, res) => {
+  res.json({ status: 'healthy', timestamp: new Date().toISOString() });
+});
+
+// Start the web server
+app.listen(PORT, () => {
+  console.log(`🌐 Web server running on port ${PORT}`);
+});
 
 // Configuration
 const SERVER_IP = 'gameplannet.aternos.me';
@@ -13,12 +35,14 @@ class BotManager {
         this.isSleeping = false;
         this.isFighting = false;
         this.currentTask = null;
+        this.botStatus = 'starting';
         
         this.startBotRotation();
     }
 
     startBotRotation() {
         console.log('🔄 Starting bot rotation system...');
+        this.botStatus = 'starting';
         this.connectBot();
     }
 
@@ -27,13 +51,16 @@ class BotManager {
         const mode = this.currentBotIndex === 0 ? 'fighter' : 'herobrine';
         
         console.log(`🎮 Connecting ${mode.toUpperCase()} bot: ${username}`);
+        this.botStatus = `connecting_${mode}`;
         
         this.currentBot = mineflayer.createBot({
             host: SERVER_IP,
             port: SERVER_PORT,
             username: username,
             version: '1.21.10',
-            auth: 'offline'
+            auth: 'offline',
+            checkTimeoutInterval: 60000, // Increase timeout
+            logErrors: true
         });
 
         this.setupEventHandlers(mode);
@@ -44,10 +71,12 @@ class BotManager {
 
         bot.on('login', () => {
             console.log(`✅ ${mode.toUpperCase()} bot logged in successfully`);
+            this.botStatus = `connected_${mode}`;
         });
 
         bot.on('spawn', () => {
             console.log(`🌍 ${mode.toUpperCase()} bot spawned in world`);
+            this.botStatus = `active_${mode}`;
             
             setTimeout(() => {
                 bot.chat(`Hello! ${mode.toUpperCase()} mode activated!`);
@@ -68,23 +97,28 @@ class BotManager {
         bot.on('death', () => {
             console.log(`💀 ${mode.toUpperCase()} bot died`);
             this.isFighting = false;
+            this.botStatus = `dead_${mode}`;
             setTimeout(() => {
                 bot.chat('I died! But I will be back...');
+                this.botStatus = `active_${mode}`;
             }, 2000);
         });
 
         bot.on('kicked', (reason) => {
             console.log(`🚫 ${mode.toUpperCase()} bot kicked:`, reason);
+            this.botStatus = 'kicked';
             this.rotateToNextBot();
         });
 
         bot.on('error', (err) => {
-            console.log(`❌ ${mode.toUpperCase()} bot error:`, err);
+            console.log(`❌ ${mode.toUpperCase()} bot error:`, err.message);
+            this.botStatus = 'error';
             this.rotateToNextBot();
         });
 
         bot.on('end', () => {
             console.log(`🔌 ${mode.toUpperCase()} bot disconnected`);
+            this.botStatus = 'disconnected';
             this.rotateToNextBot();
         });
 
@@ -301,10 +335,10 @@ class BotManager {
         
         console.log(`Next bot: ${BOT_USERNAMES[this.currentBotIndex]}`);
         
-        // Wait 5 seconds before connecting next bot
+        // Wait 10 seconds before connecting next bot
         setTimeout(() => {
             this.connectBot();
-        }, 5000);
+        }, 10000);
     }
 
     manualRotate() {
@@ -330,7 +364,7 @@ class BotManager {
             if (!this.isNight && !this.isFighting && Math.random() < 0.3) {
                 this.randomMovement();
             }
-        }, 60000); // Every minute
+        }, 60000);
     }
 
     attackPlayer(username) {
@@ -369,7 +403,6 @@ class BotManager {
         }
         
         this.currentBot.chat('Guarding this area!');
-        // Simple guard behavior - just stay and look around
         this.guardBehavior();
     }
 
@@ -400,7 +433,6 @@ class BotManager {
         const player = this.currentBot.players[username];
         if (player && player.entity) {
             this.currentBot.chat(`Following ${username}!`);
-            // Look at player continuously
             this.followBehavior(username);
         }
     }
@@ -469,7 +501,7 @@ class BotManager {
             if (!this.isNight && Math.random() < 0.2) {
                 this.randomHerobrineBehavior();
             }
-        }, 120000); // Every 2 minutes
+        }, 120000);
     }
 
     respondToMention(username) {
@@ -633,7 +665,6 @@ class BotManager {
             helpMessages.push(...herobrineHelp);
         }
         
-        // Send messages with delay
         helpMessages.forEach((msg, index) => {
             setTimeout(() => {
                 if (this.currentBot) {
@@ -651,6 +682,28 @@ class BotManager {
         this.currentBot.chat(`Status: ${mode.toUpperCase()} | ${timeStatus} | Health: ${health} | Nearby: ${players.length} players`);
     }
 }
+
+// Add status endpoint to web server
+app.get('/status', (req, res) => {
+    if (!botManager.currentBot) {
+        return res.json({ 
+            status: 'no_bot_connected',
+            message: 'No bot is currently connected'
+        });
+    }
+    
+    const mode = botManager.currentBotIndex === 0 ? 'fighter' : 'herobrine';
+    res.json({
+        status: 'online',
+        current_bot: BOT_USERNAMES[botManager.currentBotIndex],
+        mode: mode,
+        bot_status: botManager.botStatus,
+        is_night: botManager.isNight,
+        is_sleeping: botManager.isSleeping,
+        server: `${SERVER_IP}:${SERVER_PORT}`,
+        timestamp: new Date().toISOString()
+    });
+});
 
 // Start the bot manager
 console.log('Starting Minecraft Bot Rotation System');
