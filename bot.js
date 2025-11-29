@@ -41,14 +41,14 @@ class BotManager {
         this.activityInterval = null;
         this.botStatus = 'starting';
         this.reconnectAttempts = 0;
-        this.maxReconnectAttempts = 5; // Reduced from 10
+        this.maxReconnectAttempts = 5;
         this.lastConnectionAttempt = 0;
-        this.connectionCooldown = 30000; // 30 seconds cooldown between connections
+        this.connectionCooldown = 30000; // 30 seconds cooldown
         
         // Start bot after a short delay to let health server start
         setTimeout(() => {
             this.startBotRotation();
-        }, 5000); // Increased initial delay
+        }, 5000);
     }
 
     startBotRotation() {
@@ -69,11 +69,10 @@ class BotManager {
         
         if (this.reconnectAttempts >= this.maxReconnectAttempts) {
             console.log(`❌ Max reconnection attempts (${this.maxReconnectAttempts}) reached. Waiting before retrying...`);
-            // Reset attempts after a longer wait
             setTimeout(() => {
                 this.reconnectAttempts = 0;
                 console.log('🔄 Resetting connection attempts counter');
-            }, 60000); // 1 minute
+            }, 60000);
             return false;
         }
         
@@ -106,7 +105,7 @@ class BotManager {
                 auth: 'offline',
                 checkTimeoutInterval: 30000,
                 logErrors: true,
-                connectTimeout: 30000, // 30 second connection timeout
+                connectTimeout: 30000,
             });
 
             this.setupEventHandlers(mode);
@@ -122,35 +121,26 @@ class BotManager {
         bot.on('login', () => {
             console.log(`✅ ${mode.toUpperCase()} bot logged in successfully`);
             this.botStatus = `connected_${mode}`;
-            this.reconnectAttempts = 0; // Reset on successful login
+            this.reconnectAttempts = 0;
         });
 
         bot.on('spawn', () => {
             console.log(`🌍 ${mode.toUpperCase()} bot spawned in world`);
             this.botStatus = `active_${mode}`;
             
-            // Immediately check time and set sleep state
-            this.checkTimeAndSleep();
-            
-            // Start day/night cycle monitoring
+            // Start day/night cycle monitoring immediately
             this.startTimeMonitoring();
             
-            // Start mode-specific activities if not sleeping
-            if (!this.isSleeping) {
-                if (mode === 'keeper') {
-                    this.startKeeperActivities();
-                } else {
-                    this.startHerobrineActivities();
-                }
+            // Start activities
+            if (mode === 'keeper') {
+                this.startKeeperActivities();
+            } else {
+                this.startHerobrineActivities();
             }
             
             setTimeout(() => {
                 if (bot.entity) {
-                    if (this.isSleeping) {
-                        bot.chat('💤 Good night everyone...');
-                    } else {
-                        bot.chat(`${mode === 'keeper' ? '🛡️' : '👻'} ${mode.toUpperCase()} mode activated!`);
-                    }
+                    bot.chat(`${mode === 'keeper' ? '🛡️' : '👻'} ${mode.toUpperCase()} mode activated!`);
                 }
             }, 3000);
         });
@@ -172,7 +162,7 @@ class BotManager {
             
             if (reason.includes('throttled') || reason.includes('wait')) {
                 console.log('⚠️ Connection throttled detected - increasing cooldown');
-                this.connectionCooldown = 60000; // Increase to 1 minute for throttled connections
+                this.connectionCooldown = 60000;
             }
             
             this.scheduleNextRotation();
@@ -184,7 +174,7 @@ class BotManager {
             
             if (err.code === 'ECONNRESET' || err.message.includes('timeout')) {
                 console.log('⚠️ Connection error detected - increasing cooldown');
-                this.connectionCooldown = 45000; // 45 seconds for connection errors
+                this.connectionCooldown = 45000;
             }
             
             this.scheduleNextRotation();
@@ -235,7 +225,7 @@ class BotManager {
                 this.forceWake();
             }
 
-            // Mode-specific commands - only work when not sleeping
+            // Mode-specific commands
             if (!this.isSleeping) {
                 if (mode === 'keeper') {
                     this.handleKeeperCommands(username, msg);
@@ -249,14 +239,13 @@ class BotManager {
     }
 
     scheduleNextRotation() {
-        // Calculate delay based on reconnect attempts
         let delay;
         if (this.reconnectAttempts <= 2) {
-            delay = 30000; // 30 seconds for first few attempts
+            delay = 30000;
         } else if (this.reconnectAttempts <= 4) {
-            delay = 60000; // 1 minute for middle attempts
+            delay = 60000;
         } else {
-            delay = 120000; // 2 minutes for final attempts
+            delay = 120000;
         }
 
         console.log(`⏰ Scheduling next rotation in ${delay/1000} seconds...`);
@@ -269,18 +258,18 @@ class BotManager {
     rotateToNextBot() {
         console.log('🔄 Rotating to next bot...');
         
-        // Clean up current bot
+        // Clean up current bot properly
         this.stopAllActivities();
-        if (this.currentBot) {
+        if (this.currentBot && this.currentBot.end) {
             try {
-                this.currentBot.quit();
+                this.currentBot.end(); // Use end() instead of quit()
             } catch (e) {
-                console.log('Error during bot cleanup:', e);
+                console.log('Error during bot cleanup:', e.message);
             }
             this.currentBot = null;
         }
         
-        // Reset cooldown to default for new connection attempts
+        // Reset cooldown to default
         this.connectionCooldown = 30000;
         
         // Switch to next bot
@@ -294,18 +283,21 @@ class BotManager {
 
     manualRotate() {
         console.log('Manual rotation triggered');
-        this.reconnectAttempts = 0; // Reset attempts for manual rotation
+        this.reconnectAttempts = 0;
         this.rotateToNextBot();
     }
 
-    // ========== SLEEP SYSTEM ==========
+    // ========== SIMPLE SLEEP SYSTEM ==========
     
-    // Time and Sleep Management
     startTimeMonitoring() {
-        // Check time every 20 seconds
-        setInterval(() => {
+        // Check time every 30 seconds
+        const timeCheck = setInterval(() => {
+            if (!this.currentBot?.entity) {
+                clearInterval(timeCheck);
+                return;
+            }
             this.checkTimeAndSleep();
-        }, 20000);
+        }, 30000);
     }
 
     checkTimeAndSleep() {
@@ -320,11 +312,9 @@ class BotManager {
         console.log(`⏰ Time: ${time}, Night: ${this.isNight}, Sleeping: ${this.isSleeping}`);
         
         if (this.isNight && !wasNight && !this.isSleeping) {
-            // Just became night - go to sleep
             console.log('🌙 Night time detected. Going to sleep...');
             this.goToSleep();
         } else if (!this.isNight && wasNight && this.isSleeping) {
-            // Just became day - wake up
             console.log('☀️ Day time detected. Waking up...');
             this.wakeUp();
         }
@@ -348,15 +338,18 @@ class BotManager {
         // STOP ALL ACTIVITIES
         this.stopAllActivities();
         
-        // Chat message
-        setTimeout(() => {
-            if (bot.entity) {
-                bot.chat(mode === 'keeper' ? '💤 Time to sleep. Good night!' : '💤 Even shadows need rest...');
+        // Simple sleep - just stop moving and chat
+        if (bot.entity) {
+            bot.chat(mode === 'keeper' ? '💤 Time to sleep. Good night!' : '💤 Even shadows need rest...');
+            
+            // Stop pathfinding
+            if (bot.pathfinder) {
+                bot.pathfinder.setGoal(null);
             }
-        }, 1000);
+        }
         
-        // Try to find and sleep in bed
-        await this.tryToSleep();
+        // Set minimal sleep behavior
+        this.setSleepBehavior();
     }
 
     wakeUp() {
@@ -376,101 +369,11 @@ class BotManager {
         }
         
         // Resume activities
-        if (mode === 'keeper') {
+        const currentMode = this.currentBotIndex === 0 ? 'keeper' : 'herobrine';
+        if (currentMode === 'keeper') {
             this.startKeeperActivities();
         } else {
             this.startHerobrineActivities();
-        }
-    }
-
-    async tryToSleep() {
-        if (this.isSleeping) return;
-
-        try {
-            const bot = this.currentBot;
-            bot.pathfinder.setGoal(null);
-
-            console.log("🌙 Night time - attempting to sleep...");
-
-            const bedNames = [
-                "red_bed", "blue_bed", "green_bed", "yellow_bed", "white_bed", 
-                "black_bed", "brown_bed", "cyan_bed", "gray_bed", "light_blue_bed", 
-                "light_gray_bed", "lime_bed", "magenta_bed", "orange_bed", "pink_bed", "purple_bed"
-            ];
-
-            let bedBlock = bot.findBlock({
-                matching: (block) => bedNames.includes(block.name),
-                maxDistance: 64,
-            });
-
-            if (bedBlock) {
-                console.log(`  ✅ Found bed at distance ${bot.entity.position.distanceTo(bedBlock.position).toFixed(1)} blocks`);
-            }
-
-            if (!bedBlock) {
-                console.log("  ⚠️  No bed found nearby - sleeping without bed");
-            }
-
-            if (bedBlock) {
-                const distance = bot.entity.position.distanceTo(bedBlock.position);
-                
-                if (distance > 3) {
-                    console.log(`  🚶 Walking to bed (${distance.toFixed(1)} blocks away)...`);
-                    const goal = new (require('mineflayer-pathfinder').goals.GoalBlock)(
-                        bedBlock.position.x,
-                        bedBlock.position.y,
-                        bedBlock.position.z,
-                    );
-                    bot.pathfinder.setGoal(goal);
-                    await this.waitForArrival(
-                        bedBlock.position.x,
-                        bedBlock.position.y,
-                        bedBlock.position.z,
-                        3,
-                        10000,
-                    );
-                    bot.pathfinder.setGoal(null);
-                    await this.delay(500);
-                }
-
-                console.log("  💤 Attempting to sleep in bed...");
-
-                try {
-                    await bot.sleep(bedBlock);
-                    console.log("  ✅ Sleeping... will wake at dawn");
-
-                    bot.once("wake", () => {
-                        console.log("  ☀️  Good morning!");
-                        this.isSleeping = false;
-                        this.wakeUp();
-                    });
-                    
-                    // Also wake up if day comes
-                    const wakeCheck = setInterval(() => {
-                        if (!this.isNightTime() && this.isSleeping) {
-                            clearInterval(wakeCheck);
-                            try {
-                                bot.wake();
-                            } catch (e) {
-                                // Ignore wake errors
-                            }
-                        }
-                    }, 5000);
-                    
-                } catch (error) {
-                    console.log(`  ⚠️  Sleep failed: ${error.message}`);
-                    this.isSleeping = false;
-                    this.wakeUp();
-                }
-            } else {
-                console.log("  ⚠️  No bed available - sleeping in place");
-                // Set sleep behavior without bed
-                this.setSleepBehavior();
-            }
-        } catch (error) {
-            console.log(`  ⚠️  Sleep error: ${error.message}`);
-            this.isSleeping = false;
-            this.wakeUp();
         }
     }
 
@@ -478,51 +381,26 @@ class BotManager {
         const bot = this.currentBot;
         if (!bot.entity) return;
         
-        // STOP ALL MOVEMENT AND ACTIVITIES
-        this.stopAllActivities();
-        
-        // Only set a very minimal sleep behavior
+        // Very minimal activity while sleeping
         this.currentTask = setInterval(() => {
             if (!this.isSleeping || !bot.entity) {
                 this.stopAllActivities();
                 return;
             }
             
-            // EXTREMELY minimal - just to show it's alive
-            if (Math.random() < 0.05) { // 5% chance every 30 seconds
-                // Almost imperceptible head movement
+            // Occasional small head movements to appear alive
+            if (Math.random() < 0.1) {
                 bot.look(
-                    bot.entity.yaw + (Math.random() - 0.5) * 0.1,
+                    bot.entity.yaw + (Math.random() - 0.5) * 0.2,
                     bot.entity.pitch,
                     true
                 );
             }
-            
-        }, 30000); // Check every 30 seconds
-    }
-
-    async waitForArrival(x, y, z, threshold, timeout = 10000) {
-        const bot = this.currentBot;
-        return new Promise((resolve) => {
-            const startTime = Date.now();
-            const checkArrival = setInterval(() => {
-                const distance = bot.entity.position.distanceTo({ x, y, z });
-                const elapsed = Date.now() - startTime;
-
-                if (distance < threshold || elapsed > timeout) {
-                    clearInterval(checkArrival);
-                    resolve();
-                }
-            }, 100);
-        });
-    }
-
-    delay(ms) {
-        return new Promise((resolve) => setTimeout(resolve, ms));
+        }, 15000);
     }
 
     stopAllActivities() {
-        // Clear all intervals and tasks
+        // Clear all intervals
         if (this.currentTask) {
             clearInterval(this.currentTask);
             this.currentTask = null;
@@ -549,7 +427,7 @@ class BotManager {
         this.wakeUp();
     }
 
-    // ========== KEEPER METHODS ==========
+    // ========== KEEPER ACTIVITIES ==========
     
     startKeeperActivities() {
         if (this.isSleeping) {
@@ -559,12 +437,51 @@ class BotManager {
         
         console.log('🛡️ Starting Keeper daytime activities');
         
-        // Auto patrol if idle
+        // Simple patrol system
         this.activityInterval = setInterval(() => {
-            if (this.currentBot?.entity && !this.isSleeping && Math.random() < 0.3) {
-                this.randomPatrol();
+            if (this.currentBot?.entity && !this.isSleeping && Math.random() < 0.4) {
+                this.keeperPatrol();
             }
-        }, 120000); // Every 2 minutes
+        }, 90000);
+    }
+
+    keeperPatrol() {
+        if (!this.currentBot?.entity || this.isSleeping) return;
+        
+        const actions = [
+            () => {
+                this.currentBot.look(
+                    Math.random() * Math.PI * 2,
+                    Math.random() * 0.3 - 0.15,
+                    true
+                );
+                this.currentBot.chat('🛡️ Keeping watch...');
+            },
+            () => {
+                this.currentBot.setControlState('jump', true);
+                setTimeout(() => {
+                    this.currentBot.setControlState('jump', false);
+                }, 300);
+                this.currentBot.chat('🚶 Patrolling the area...');
+            },
+            () => {
+                this.currentBot.chat('👀 Scanning for threats...');
+                this.lookAround();
+            }
+        ];
+        
+        const action = actions[Math.floor(Math.random() * actions.length)];
+        action();
+    }
+
+    lookAround() {
+        if (!this.currentBot?.entity) return;
+        
+        this.currentBot.look(
+            this.currentBot.entity.yaw + (Math.random() - 0.5) * 1.5,
+            this.currentBot.entity.pitch + (Math.random() - 0.5) * 0.5,
+            true
+        );
     }
 
     guardArea() {
@@ -574,25 +491,20 @@ class BotManager {
         }
         
         this.currentBot.chat('🛡️ Guarding this area!');
-        this.guardBehavior();
-    }
-
-    guardBehavior() {
         this.stopAllActivities();
+        
         this.currentTask = setInterval(() => {
             if (!this.currentBot?.entity || this.isSleeping) {
                 this.stopAllActivities();
                 return;
             }
             
-            // Look around slowly while guarding
             this.currentBot.look(
-                this.currentBot.entity.yaw + 0.2,
+                this.currentBot.entity.yaw + 0.3,
                 this.currentBot.entity.pitch,
                 true
             );
-            
-        }, 5000);
+        }, 4000);
     }
 
     startPatrol() {
@@ -602,7 +514,7 @@ class BotManager {
         }
         
         this.currentBot.chat('🚶 Starting patrol!');
-        this.randomPatrol();
+        this.keeperPatrol();
     }
 
     stopPatrol() {
@@ -619,12 +531,11 @@ class BotManager {
         const player = this.currentBot.players[username];
         if (player && player.entity) {
             this.currentBot.chat(`👥 Following ${username}!`);
-            this.followBehavior(username);
+            this.currentBot.lookAt(player.entity.position.offset(0, 1.6, 0));
         }
     }
 
     stopFollow() {
-        this.stopAllActivities();
         this.currentBot.chat('🛑 Stopped following.');
     }
 
@@ -648,7 +559,7 @@ class BotManager {
         }
         
         this.currentBot.chat('🗺️ Exploring the area!');
-        this.randomPatrol();
+        this.keeperPatrol();
     }
 
     protectPlayer(username) {
@@ -660,36 +571,11 @@ class BotManager {
         const player = this.currentBot.players[username];
         if (player && player.entity) {
             this.currentBot.chat(`🛡️ Protecting ${username}!`);
-            this.followBehavior(username);
+            this.currentBot.lookAt(player.entity.position.offset(0, 1.6, 0));
         }
     }
 
-    randomPatrol() {
-        if (!this.currentBot?.entity || this.isSleeping) return;
-        
-        // Look in random directions while patrolling
-        this.currentBot.look(
-            Math.random() * Math.PI * 2,
-            Math.random() * 0.2 - 0.1,
-            true
-        );
-    }
-
-    followBehavior(username) {
-        this.stopAllActivities();
-        this.currentTask = setInterval(() => {
-            const player = this.currentBot.players[username];
-            if (!player || !player.entity || this.isSleeping || !this.currentBot.entity) {
-                this.stopAllActivities();
-                return;
-            }
-            
-            this.currentBot.lookAt(player.entity.position.offset(0, 1.6, 0));
-            
-        }, 4000);
-    }
-
-    // ========== HEROBRINE METHODS ==========
+    // ========== HEROBRINE ACTIVITIES ==========
     
     startHerobrineActivities() {
         if (this.isSleeping) {
@@ -699,12 +585,37 @@ class BotManager {
         
         console.log('👻 Starting Herobrine daytime activities');
         
-        // Random behaviors
         this.activityInterval = setInterval(() => {
-            if (this.currentBot?.entity && !this.isSleeping && Math.random() < 0.2) {
+            if (this.currentBot?.entity && !this.isSleeping && Math.random() < 0.3) {
                 this.randomHerobrineBehavior();
             }
-        }, 150000); // Every 2.5 minutes
+        }, 120000);
+    }
+
+    randomHerobrineBehavior() {
+        const behaviors = [
+            () => {
+                this.currentBot.chat('*whispers* I see you...');
+                this.stareAtNearestPlayer();
+            },
+            () => {
+                this.currentBot.chat('The shadows watch...');
+                this.lookAround();
+            },
+            () => {
+                this.currentBot.setControlState('sneak', true);
+                setTimeout(() => {
+                    this.currentBot.setControlState('sneak', false);
+                }, 2000);
+                this.currentBot.chat('*disappears into darkness*');
+            },
+            () => {
+                this.currentBot.chat('*laughs eerily*');
+            }
+        ];
+        
+        const behavior = behaviors[Math.floor(Math.random() * behaviors.length)];
+        behavior();
     }
 
     respondToMention(username) {
@@ -772,11 +683,10 @@ class BotManager {
         }
         
         this.currentBot.chat(`👁️ Stalking ${username}...`);
-        this.followBehavior(username);
+        this.stareAtPlayer(username);
     }
 
     stopStalking() {
-        this.stopAllActivities();
         this.currentBot.chat('👁️ No longer stalking...');
     }
 
@@ -804,8 +714,7 @@ class BotManager {
             }
             
             hauntCount++;
-            
-        }, 10000);
+        }, 8000);
     }
 
     sendCreepyMessage() {
@@ -822,17 +731,6 @@ class BotManager {
         
         const message = messages[Math.floor(Math.random() * messages.length)];
         this.currentBot.chat(message);
-    }
-
-    randomHerobrineBehavior() {
-        const behaviors = [
-            () => this.sendCreepyMessage(),
-            () => this.stareAtNearestPlayer(),
-            () => this.currentBot.chat('*laughs eerily*')
-        ];
-        
-        const behavior = behaviors[Math.floor(Math.random() * behaviors.length)];
-        behavior();
     }
 
     stareAtPlayer(username) {
@@ -930,9 +828,8 @@ console.log('Starting Minecraft Bot Rotation System');
 console.log('Server:', SERVER_IP + ':' + SERVER_PORT);
 console.log('Version: 1.21.10');
 console.log('Bots: Keeper & HeroBrine');
-console.log('Connection Throttling: ENABLED - Will respect Aternos rate limits');
-console.log('Night Sleep: ENABLED - Bot will be completely inactive at night');
-console.log('Auto Rotation: On Disconnect');
+console.log('Connection Throttling: ENABLED');
+console.log('Night Sleep: ENABLED');
 
 const botManager = new BotManager();
 
@@ -940,7 +837,7 @@ const botManager = new BotManager();
 process.on('SIGINT', () => {
     console.log('Shutting down bot system...');
     if (botManager.currentBot) {
-        botManager.currentBot.quit();
+        botManager.currentBot.end();
     }
     process.exit();
 });
