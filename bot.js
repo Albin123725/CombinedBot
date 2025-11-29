@@ -8,8 +8,8 @@ const server = http.createServer((req, res) => {
     res.end(JSON.stringify({
       status: 'online',
       service: 'Minecraft Bot Rotation System',
-      current_bot: botManager?.currentBotIndex === 0 ? 'FighterBot' : 'HerobrineBot',
-      mode: botManager?.currentBotIndex === 0 ? 'fighter' : 'herobrine',
+      current_bot: botManager?.currentBotIndex === 0 ? 'Keeper' : 'HeroBrine',
+      mode: botManager?.currentBotIndex === 0 ? 'keeper' : 'herobrine',
       is_night: botManager?.isNight || false,
       is_sleeping: botManager?.isSleeping || false,
       timestamp: new Date().toISOString()
@@ -29,7 +29,7 @@ server.listen(PORT, () => {
 // Configuration
 const SERVER_IP = 'gameplannet.aternos.me';
 const SERVER_PORT = 51270;
-const BOT_USERNAMES = ['Keeper', 'HeroBrine'];
+const BOT_USERNAMES = ['Keeper', 'HeroBrine']; // Updated bot names
 
 class BotManager {
     constructor() {
@@ -40,6 +40,7 @@ class BotManager {
         this.isFighting = false;
         this.currentTask = null;
         this.botStatus = 'starting';
+        this.sleepPosition = null;
         
         // Start bot after a short delay to let health server start
         setTimeout(() => {
@@ -55,7 +56,7 @@ class BotManager {
 
     connectBot() {
         const username = BOT_USERNAMES[this.currentBotIndex];
-        const mode = this.currentBotIndex === 0 ? 'Keeper' : 'HeroBrine';
+        const mode = this.currentBotIndex === 0 ? 'keeper' : 'herobrine'; // Updated mode names
         
         console.log(`🎮 Connecting ${mode.toUpperCase()} bot: ${username}`);
         this.botStatus = `connecting_${mode}`;
@@ -92,7 +93,7 @@ class BotManager {
             
             setTimeout(() => {
                 if (bot.entity) {
-                    bot.chat(`Hello! ${mode.toUpperCase()} mode activated!`);
+                    bot.chat(`${mode === 'keeper' ? '🛡️' : '👻'} ${mode.toUpperCase()} mode activated!`);
                     this.checkTimeAndSleep();
                 }
             }, 3000);
@@ -101,8 +102,8 @@ class BotManager {
             this.startTimeMonitoring();
             
             // Start mode-specific activities
-            if (mode === 'fighter') {
-                this.startFighterActivities();
+            if (mode === 'keeper') {
+                this.startKeeperActivities();
             } else {
                 this.startHerobrineActivities();
             }
@@ -145,15 +146,15 @@ class BotManager {
             const msg = message.toLowerCase();
             
             if (msg === 'hi' || msg === 'hello' || msg === 'hey') {
-                bot.chat(`Hello ${username}!`);
+                bot.chat(`Hello ${username}! ${mode === 'keeper' ? '🛡️' : '👻'}`);
             }
             
             if (msg === '!mode') {
-                bot.chat(`I'm in ${mode.toUpperCase()} mode!`);
+                bot.chat(`I'm in ${mode.toUpperCase()} mode! ${mode === 'keeper' ? '⚔️' : '💀'}`);
             }
             
             if (msg === '!rotate') {
-                bot.chat('Rotating to next bot...');
+                bot.chat('🔄 Rotating to next bot...');
                 this.manualRotate();
             }
             
@@ -174,34 +175,34 @@ class BotManager {
             }
 
             // Mode-specific commands
-            if (mode === 'fighter') {
-                this.handleFighterCommands(username, msg);
+            if (mode === 'keeper') {
+                this.handleKeeperCommands(username, msg);
             } else {
                 this.handleHerobrineCommands(username, msg);
             }
         });
     }
 
-    handleFighterCommands(username, msg) {
+    handleKeeperCommands(username, msg) {
         const bot = this.currentBot;
         
-        if (this.isNight) {
+        if (this.isSleeping) {
             if (msg.startsWith('!')) {
-                bot.chat('I am sleeping at night. Wait for daytime.');
+                bot.chat('💤 I am sleeping. Wait for daytime.');
             }
             return;
         }
         
-        if (msg === '!attack me') {
-            this.attackPlayer(username);
-        }
-        
-        if (msg === '!stop attack') {
-            this.stopAttack();
-        }
-        
         if (msg === '!guard') {
             this.guardArea();
+        }
+        
+        if (msg === '!patrol') {
+            this.startPatrol();
+        }
+        
+        if (msg === '!stop patrol') {
+            this.stopPatrol();
         }
         
         if (msg === '!follow me') {
@@ -219,19 +220,23 @@ class BotManager {
         if (msg === '!explore') {
             this.exploreArea();
         }
+        
+        if (msg === '!protect') {
+            this.protectPlayer(username);
+        }
     }
 
     handleHerobrineCommands(username, msg) {
         const bot = this.currentBot;
         
-        if (this.isNight) {
+        if (this.isSleeping) {
             if (msg.startsWith('!')) {
-                bot.chat('Even Herobrine sleeps at night...');
+                bot.chat('💤 Even Herobrine sleeps at night...');
             }
             return;
         }
         
-        if (msg.includes('herobrine') || msg.includes('hb') || msg.includes('ghost')) {
+        if (msg.includes('herobrine') || msg.includes('hb') || msg.includes('ghost') || msg.includes('scary')) {
             this.respondToMention(username);
         }
         
@@ -255,6 +260,10 @@ class BotManager {
             this.stopStalking();
         }
         
+        if (msg === '!haunt') {
+            this.hauntPlayer(username);
+        }
+        
         if (msg === '!message') {
             this.sendCreepyMessage();
         }
@@ -262,10 +271,10 @@ class BotManager {
 
     // Time and Sleep Management
     startTimeMonitoring() {
-        // Check time every 30 seconds
+        // Check time every 20 seconds
         setInterval(() => {
             this.checkTimeAndSleep();
-        }, 30000);
+        }, 20000);
     }
 
     checkTimeAndSleep() {
@@ -277,11 +286,13 @@ class BotManager {
         // Minecraft time: 0-23999, night is roughly 13000-23000
         this.isNight = time >= 13000 && time <= 23000;
         
-        if (this.isNight && !wasNight) {
-            // Just became night
+        if (this.isNight && !wasNight && !this.isSleeping) {
+            // Just became night - go to sleep
+            console.log('🌙 Night time detected. Bot going to sleep...');
             this.goToSleep();
-        } else if (!this.isNight && wasNight) {
-            // Just became day
+        } else if (!this.isNight && wasNight && this.isSleeping) {
+            // Just became day - wake up
+            console.log('☀️ Day time detected. Bot waking up...');
             this.wakeUp();
         }
     }
@@ -289,35 +300,113 @@ class BotManager {
     goToSleep() {
         if (this.isSleeping) return;
         
-        console.log('Night time detected. Bot going to sleep...');
+        console.log('💤 Going to sleep...');
         this.isSleeping = true;
         this.isFighting = false;
         
         const bot = this.currentBot;
+        const mode = this.currentBotIndex === 0 ? 'keeper' : 'herobrine';
+        
+        // Save current position for waking up
+        this.sleepPosition = bot.entity.position.clone();
         
         // Stop all activities
         this.clearTasks();
         
+        // Find a bed or safe spot
+        this.findSleepSpot();
+        
         // Chat message
         setTimeout(() => {
             if (bot.entity) {
-                bot.chat('Time to sleep. Good night!');
+                bot.chat(mode === 'keeper' ? '💤 Time to sleep. Good night!' : '💤 Even shadows need rest...');
             }
         }, 2000);
+        
+        // Set sleep behavior - minimal movement
+        this.setSleepBehavior();
     }
 
     wakeUp() {
         if (!this.isSleeping) return;
         
-        console.log('Day time detected. Bot waking up...');
+        console.log('☀️ Waking up...');
         this.isSleeping = false;
         
         const bot = this.currentBot;
-        const mode = this.currentBotIndex === 0 ? 'fighter' : 'herobrine';
+        const mode = this.currentBotIndex === 0 ? 'keeper' : 'herobrine';
+        
+        // Clear sleep behavior
+        this.clearTasks();
         
         if (bot.entity) {
-            bot.chat('Good morning! Time for activities!');
+            bot.chat(mode === 'keeper' ? '☀️ Good morning! Ready to protect!' : '☀️ The darkness returns...');
         }
+        
+        // Resume activities
+        if (mode === 'keeper') {
+            this.startKeeperActivities();
+        } else {
+            this.startHerobrineActivities();
+        }
+    }
+
+    findSleepSpot() {
+        const bot = this.currentBot;
+        if (!bot.entity) return;
+        
+        // Look for nearby beds first
+        const beds = bot.findBlocks({
+            matching: (block) => block.name.includes('_bed'),
+            maxDistance: 10,
+            count: 5
+        });
+        
+        if (beds.length > 0) {
+            const bedPos = beds[0];
+            // Move near the bed
+            bot.lookAt(bedPos.offset(0.5, 0.5, 0.5));
+            console.log('Found a bed to sleep in');
+        } else {
+            // Find a safe corner or under trees
+            const safeBlocks = bot.findBlocks({
+                matching: (block) => 
+                    block.name.includes('_log') || 
+                    block.name === 'crafting_table' ||
+                    block.name.includes('_leaves'),
+                maxDistance: 8,
+                count: 3
+            });
+            
+            if (safeBlocks.length > 0) {
+                const safePos = safeBlocks[0];
+                bot.lookAt(safePos.offset(0.5, 0.5, 0.5));
+                console.log('Found safe spot for sleeping');
+            }
+        }
+    }
+
+    setSleepBehavior() {
+        const bot = this.currentBot;
+        if (!bot.entity) return;
+        
+        this.currentTask = setInterval(() => {
+            if (!this.isSleeping || !bot.entity) {
+                this.clearTasks();
+                return;
+            }
+            
+            // Very minimal movement while sleeping
+            if (Math.random() < 0.1) { // 10% chance every 10 seconds
+                // Slight head movement to look natural
+                bot.look(
+                    bot.entity.yaw + (Math.random() - 0.5) * 0.2,
+                    bot.entity.pitch + (Math.random() - 0.5) * 0.1,
+                    true
+                );
+            }
+            
+        }, 10000); // Check every 10 seconds
     }
 
     forceSleep() {
@@ -338,7 +427,7 @@ class BotManager {
 
     // Bot Rotation System
     rotateToNextBot() {
-        console.log('Rotating to next bot...');
+        console.log('🔄 Rotating to next bot...');
         
         // Clean up current bot
         if (this.currentBot) {
@@ -373,160 +462,159 @@ class BotManager {
         }
     }
 
-    // Fighter Methods
-    startFighterActivities() {
-        if (this.isNight) return;
+    // Keeper Methods (replaces Fighter)
+    startKeeperActivities() {
+        if (this.isSleeping) return;
         
-        console.log('Starting fighter daytime activities');
+        console.log('🛡️ Starting Keeper daytime activities');
         
-        // Auto activities if idle
+        // Auto patrol if idle
         this.currentTask = setInterval(() => {
-            if (this.currentBot?.entity && !this.isNight && !this.isFighting && Math.random() < 0.3) {
-                this.randomMovement();
+            if (this.currentBot?.entity && !this.isSleeping && Math.random() < 0.4) {
+                this.randomPatrol();
             }
-        }, 60000);
-    }
-
-    attackPlayer(username) {
-        if (this.isNight) {
-            this.currentBot.chat('Sleeping at night. No fighting.');
-            return;
-        }
-        
-        const player = this.currentBot.players[username];
-        if (player && player.entity) {
-            this.isFighting = true;
-            
-            // Look at player
-            this.currentBot.lookAt(player.entity.position.offset(0, 1.6, 0));
-            
-            this.currentBot.chat(`Attacking ${username}!`);
-            
-            // Stop fighting after 15 seconds
-            setTimeout(() => {
-                this.stopAttack();
-            }, 15000);
-        } else {
-            this.currentBot.chat(`I can't see ${username} nearby.`);
-        }
-    }
-
-    stopAttack() {
-        this.isFighting = false;
-        this.currentBot.chat('Combat stopped.');
+        }, 90000); // Every 1.5 minutes
     }
 
     guardArea() {
-        if (this.isNight) {
-            this.currentBot.chat('Sleeping at night. No guarding.');
+        if (this.isSleeping) {
+            this.currentBot.chat('💤 Sleeping. No guarding.');
             return;
         }
         
-        this.currentBot.chat('Guarding this area!');
+        this.currentBot.chat('🛡️ Guarding this area!');
         this.guardBehavior();
     }
 
     guardBehavior() {
         this.clearTasks();
         this.currentTask = setInterval(() => {
-            if (!this.currentBot?.entity || this.isNight || this.isFighting) {
+            if (!this.currentBot?.entity || this.isSleeping) {
                 this.clearTasks();
                 return;
             }
             
-            // Look around slowly
+            // Look around slowly while guarding
             this.currentBot.look(
-                this.currentBot.entity.yaw + 0.5,
+                this.currentBot.entity.yaw + 0.3,
                 this.currentBot.entity.pitch,
                 true
             );
             
-        }, 3000);
+        }, 4000);
+    }
+
+    startPatrol() {
+        if (this.isSleeping) {
+            this.currentBot.chat('💤 Sleeping. No patrolling.');
+            return;
+        }
+        
+        this.currentBot.chat('🚶 Starting patrol!');
+        this.randomPatrol();
+    }
+
+    stopPatrol() {
+        this.clearTasks();
+        this.currentBot.chat('🛑 Patrol stopped.');
     }
 
     followPlayer(username) {
-        if (this.isNight) {
-            this.currentBot.chat('Sleeping at night. No following.');
+        if (this.isSleeping) {
+            this.currentBot.chat('💤 Sleeping. No following.');
             return;
         }
         
         const player = this.currentBot.players[username];
         if (player && player.entity) {
-            this.currentBot.chat(`Following ${username}!`);
+            this.currentBot.chat(`👥 Following ${username}!`);
             this.followBehavior(username);
         }
+    }
+
+    stopFollow() {
+        this.clearTasks();
+        this.currentBot.chat('🛑 Stopped following.');
+    }
+
+    comeToPlayer(username) {
+        if (this.isSleeping) {
+            this.currentBot.chat('💤 Sleeping. Cannot come.');
+            return;
+        }
+        
+        const player = this.currentBot.players[username];
+        if (player && player.entity) {
+            this.currentBot.lookAt(player.entity.position.offset(0, 1.6, 0));
+            this.currentBot.chat(`🚶 Coming to ${username}!`);
+        }
+    }
+
+    exploreArea() {
+        if (this.isSleeping) {
+            this.currentBot.chat('💤 Sleeping. No exploring.');
+            return;
+        }
+        
+        this.currentBot.chat('🗺️ Exploring the area!');
+        this.randomPatrol();
+    }
+
+    protectPlayer(username) {
+        if (this.isSleeping) {
+            this.currentBot.chat('💤 Sleeping. Cannot protect.');
+            return;
+        }
+        
+        const player = this.currentBot.players[username];
+        if (player && player.entity) {
+            this.currentBot.chat(`🛡️ Protecting ${username}!`);
+            this.followBehavior(username);
+        }
+    }
+
+    randomPatrol() {
+        if (!this.currentBot?.entity || this.isSleeping) return;
+        
+        // Look in random directions while patrolling
+        this.currentBot.look(
+            Math.random() * Math.PI * 2,
+            Math.random() * 0.3 - 0.15,
+            true
+        );
     }
 
     followBehavior(username) {
         this.clearTasks();
         this.currentTask = setInterval(() => {
             const player = this.currentBot.players[username];
-            if (!player || !player.entity || this.isNight || !this.currentBot.entity) {
+            if (!player || !player.entity || this.isSleeping || !this.currentBot.entity) {
                 this.clearTasks();
                 return;
             }
             
             this.currentBot.lookAt(player.entity.position.offset(0, 1.6, 0));
             
-        }, 2000);
-    }
-
-    stopFollow() {
-        this.clearTasks();
-        this.currentBot.chat('Stopped following.');
-    }
-
-    comeToPlayer(username) {
-        if (this.isNight) {
-            this.currentBot.chat('Sleeping at night. Cannot come.');
-            return;
-        }
-        
-        const player = this.currentBot.players[username];
-        if (player && player.entity) {
-            this.currentBot.lookAt(player.entity.position.offset(0, 1.6, 0));
-            this.currentBot.chat(`Coming to ${username}!`);
-        }
-    }
-
-    exploreArea() {
-        if (this.isNight) {
-            this.currentBot.chat('Sleeping at night. No exploring.');
-            return;
-        }
-        
-        this.currentBot.chat('Exploring the area!');
-        this.randomMovement();
-    }
-
-    randomMovement() {
-        if (!this.currentBot?.entity || this.isNight) return;
-        
-        // Simple random looking around
-        this.currentBot.look(
-            Math.random() * Math.PI * 2,
-            Math.random() * 0.4 - 0.2,
-            true
-        );
+        }, 3000);
     }
 
     // Herobrine Methods
     startHerobrineActivities() {
-        if (this.isNight) return;
+        if (this.isSleeping) return;
         
-        console.log('Starting Herobrine daytime activities');
+        console.log('👻 Starting Herobrine daytime activities');
         
         // Random behaviors
         this.currentTask = setInterval(() => {
-            if (this.currentBot?.entity && !this.isNight && Math.random() < 0.2) {
+            if (this.currentBot?.entity && !this.isSleeping && Math.random() < 0.25) {
                 this.randomHerobrineBehavior();
             }
         }, 120000);
     }
 
     respondToMention(username) {
-        if (this.isNight) {
-            this.currentBot.chat('Zzz... sleeping...');
+        if (this.isSleeping) {
+            this.currentBot.chat('💤 Zzz... sleeping...');
             return;
         }
         
@@ -534,7 +622,8 @@ class BotManager {
             '...',
             'You called?',
             'I am here...',
-            'Why do you speak my name?'
+            'Why do you speak my name?',
+            '*whispers* Be careful...'
         ];
         
         const response = responses[Math.floor(Math.random() * responses.length)];
@@ -546,8 +635,8 @@ class BotManager {
     }
 
     disappear() {
-        if (this.isNight) {
-            this.currentBot.chat('Already disappeared for sleep...');
+        if (this.isSleeping) {
+            this.currentBot.chat('💤 Already disappeared for sleep...');
             return;
         }
         
@@ -556,8 +645,8 @@ class BotManager {
     }
 
     appear() {
-        if (this.isNight) {
-            this.currentBot.chat('Still sleeping...');
+        if (this.isSleeping) {
+            this.currentBot.chat('💤 Still sleeping...');
             return;
         }
         
@@ -566,15 +655,16 @@ class BotManager {
     }
 
     scaryAction() {
-        if (this.isNight) {
-            this.currentBot.chat('Too sleepy to scare...');
+        if (this.isSleeping) {
+            this.currentBot.chat('💤 Too sleepy to scare...');
             return;
         }
         
         const actions = [
             'The walls are watching...',
             '*whispers* I see you...',
-            'Darkness approaches...'
+            'Darkness approaches...',
+            'You are not alone...'
         ];
         
         const action = actions[Math.floor(Math.random() * actions.length)];
@@ -583,23 +673,51 @@ class BotManager {
     }
 
     stalkPlayer(username) {
-        if (this.isNight) {
-            this.currentBot.chat('Sleeping, not stalking...');
+        if (this.isSleeping) {
+            this.currentBot.chat('💤 Sleeping, not stalking...');
             return;
         }
         
-        this.currentBot.chat(`Stalking ${username}...`);
+        this.currentBot.chat(`👁️ Stalking ${username}...`);
         this.followBehavior(username);
     }
 
     stopStalking() {
         this.clearTasks();
-        this.currentBot.chat('No longer stalking...');
+        this.currentBot.chat('👁️ No longer stalking...');
+    }
+
+    hauntPlayer(username) {
+        if (this.isSleeping) {
+            this.currentBot.chat('💤 Sleeping, come back tomorrow...');
+            return;
+        }
+        
+        this.currentBot.chat(`👻 Haunting ${username}!`);
+        
+        let hauntCount = 0;
+        const hauntInterval = setInterval(() => {
+            const player = this.currentBot.players[username];
+            if (!player || !player.entity || hauntCount >= 3 || this.isSleeping) {
+                clearInterval(hauntInterval);
+                this.currentBot.chat('The haunting has ended...');
+                return;
+            }
+            
+            this.stareAtPlayer(username);
+            
+            if (hauntCount % 2 === 0) {
+                this.currentBot.chat('*whispers* ' + this.getRandomCreepyMessage());
+            }
+            
+            hauntCount++;
+            
+        }, 8000);
     }
 
     sendCreepyMessage() {
-        if (this.isNight) {
-            this.currentBot.chat('Sleeping... no messages...');
+        if (this.isSleeping) {
+            this.currentBot.chat('💤 Sleeping... no messages...');
             return;
         }
         
@@ -607,7 +725,8 @@ class BotManager {
             'The end is near...',
             'They are watching...',
             'Your world is a lie...',
-            'The voices speak...'
+            'The voices speak...',
+            'Darkness consumes all...'
         ];
         
         const message = messages[Math.floor(Math.random() * messages.length)];
@@ -618,7 +737,11 @@ class BotManager {
         const behaviors = [
             () => this.sendCreepyMessage(),
             () => this.stareAtNearestPlayer(),
-            () => this.currentBot.chat('*laughs eerily*')
+            () => this.currentBot.chat('*laughs eerily*'),
+            () => {
+                this.currentBot.chat('*shadows move*');
+                this.randomPatrol();
+            }
         ];
         
         const behavior = behaviors[Math.floor(Math.random() * behaviors.length)];
@@ -642,6 +765,17 @@ class BotManager {
         }
     }
 
+    getRandomCreepyMessage() {
+        const messages = [
+            'behind you',
+            'in the walls',
+            'watching you',
+            'coming closer',
+            'never alone'
+        ];
+        return messages[Math.floor(Math.random() * messages.length)];
+    }
+
     // Help and Status Methods
     showHelp(mode) {
         const commonHelp = [
@@ -654,16 +788,17 @@ class BotManager {
             '!wake - Force wake (day only)'
         ];
         
-        const fighterHelp = [
+        const keeperHelp = [
             '',
-            '=== FIGHTER COMMANDS ===',
-            '!attack me - Attack you',
-            '!stop attack - Stop attacking',
+            '=== KEEPER COMMANDS ===',
             '!guard - Guard area',
+            '!patrol - Start patrolling',
+            '!stop patrol - Stop patrolling',
             '!follow me - Follow you',
             '!stop follow - Stop following',
             '!come - Come to your position',
-            '!explore - Explore area'
+            '!explore - Explore area',
+            '!protect - Protect player'
         ];
         
         const herobrineHelp = [
@@ -675,12 +810,13 @@ class BotManager {
             '!scare - Scary action', 
             '!stalk - Stalk player',
             '!stop stalk - Stop stalking',
+            '!haunt - Haunt player',
             '!message - Creepy message'
         ];
         
         const helpMessages = [...commonHelp];
-        if (mode === 'fighter') {
-            helpMessages.push(...fighterHelp);
+        if (mode === 'keeper') {
+            helpMessages.push(...keeperHelp);
         } else {
             helpMessages.push(...herobrineHelp);
         }
@@ -695,7 +831,7 @@ class BotManager {
     }
 
     showStatus(mode) {
-        const timeStatus = this.isNight ? 'Sleeping' : 'Active';
+        const timeStatus = this.isSleeping ? '💤 Sleeping' : (this.isNight ? '🌙 Night' : '☀️ Day');
         const players = Object.keys(this.currentBot.players).filter(p => p !== this.currentBot.username);
         const health = Math.floor(this.currentBot.health);
         
@@ -707,6 +843,7 @@ class BotManager {
 console.log('Starting Minecraft Bot Rotation System');
 console.log('Server:', SERVER_IP + ':' + SERVER_PORT);
 console.log('Version: 1.21.10');
+console.log('Bots: Keeper & HeroBrine');
 console.log('Night Sleep: Enabled');
 console.log('Auto Rotation: On Disconnect');
 
