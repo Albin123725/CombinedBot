@@ -1,7 +1,7 @@
 {
   "name": "minecraft-bot-rotation",
   "version": "1.0.0",
-  "description": "Fighter and Herobrine bot with night sleep and automatic rotation",
+  "description": "Keeper and Herobrine bot with night sleep and automatic rotation",
   "main": "bot.js",
   "scripts": {
     "start": "node bot.js"
